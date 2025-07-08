@@ -1,0 +1,68 @@
+.notification {
+  position: relative;
+  background-color: white;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  transition: all 0.2s;
+  border-left: 4px solid var(--primary-500);
+  animation: slideIn 0.3s ease-out;
+}
+
+.notification:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 8px -1px rgba(0, 0, 0, 0.1), 0 4px 6px -1px rgba(0, 0, 0, 0.06);
+}
+
+.notification-content {
+  padding-right: 1.5rem;
+}
+
+.notification-message {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--gray-700);
+}
+
+.notification-preview {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--gray-500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notification-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0.25rem;
+  background: none;
+  border: none;
+  color: var(--gray-400);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.notification-close:hover {
+  color: var(--gray-600);
+}
+
+.close-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+} 
