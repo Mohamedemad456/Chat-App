@@ -58,6 +58,11 @@ export const AuthProvider = ({ children }) => {
       });
       const data = await response.json();
       if (response.ok) {
+        // Handle token and username like login
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('username', data.username);
+        setUser({ token: data.token, username: data.username });
+        initializeSocket(data.token);
         return { success: true };
       }
       return { success: false, message: data.message };

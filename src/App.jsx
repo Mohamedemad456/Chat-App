@@ -6,6 +6,7 @@ import ChatSidebar from './components/ChatSidebar/ChatSidebar';
 import ChatArea from './components/ChatArea/ChatArea';
 import MessageInput from './components/MessageInput/MessageInput';
 import NotificationContainer from './components/NotificationContainer/NotificationContainer';
+import { useAuth } from './context/AuthContext';
 import './App.css';
 
 // Create socket instance
@@ -17,8 +18,7 @@ const socket = io('http://localhost:3000', {
 });
 
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentUser, setCurrentUser] = useState('');
+  const { user, login, register, logout } = useAuth();
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -28,37 +28,27 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [notifications, setNotifications] = useState([]);
 
-  // Check for existing login on app load
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    const username = localStorage.getItem('username');
-    if (token && username) {
-      setCurrentUser(username);
-      setIsLoggedIn(true);
-    }
-  }, []);
-
   // Initialize socket connection when logged in
   useEffect(() => {
-    if (isLoggedIn && currentUser) {
+    if (user && user.username) {
       socket.connect();
-      socket.emit('login', currentUser);
+      socket.emit('login', user.username);
     }
     return () => {
       if (socket.connected) {
         socket.disconnect();
       }
     };
-  }, [isLoggedIn, currentUser]);
+  }, [user]);
 
   // Socket event listeners
   useEffect(() => {
-    if (!isLoggedIn) return;
+    if (!user) return;
 
     const handleUsers = (usersList) => {
       console.log('Received users list:', usersList);
       const filteredUsers = Array.isArray(usersList) 
-        ? usersList.filter(user => user !== currentUser)
+        ? usersList.filter(username => username !== user.username)
         : [];
       console.log('Filtered users:', filteredUsers);
       setUsers(filteredUsers);
@@ -75,7 +65,7 @@ function App() {
       });
 
       // Show notification if we're the receiver and not in the sender's chat
-      if (message.from !== currentUser && message.from !== selectedUser) {
+      if (message.from !== user.username && message.from !== selectedUser) {
         const notification = {
           id: Date.now(),
           from: message.from,
@@ -119,24 +109,30 @@ function App() {
       socket.off('chat history', handleChatHistory);
       socket.off('error', handleError);
     };
-  }, [isLoggedIn, currentUser, selectedUser]);
+  }, [user, selectedUser]);
 
   // Fetch users from API
   useEffect(() => {
     const fetchUsers = async () => {
-      if (!isLoggedIn || !currentUser) return;
+      if (!user || !user.username || !user.token) {
+        console.log('User not ready:', { user: !!user, username: user?.username, token: !!user?.token });
+        return;
+      }
+      
+      console.log('Fetching users with token:', user.token.substring(0, 10) + '...');
       
       try {
-        const token = localStorage.getItem('token');
         const response = await fetch('http://localhost:3000/api/users', {
           headers: {
-            'Authorization': `Bearer ${token}`
+            'Authorization': `Bearer ${user.token}`
           }
         });
         if (response.ok) {
           const data = await response.json();
           console.log('Fetched users from API:', data);
           setUsers(data.map(user => user.username));
+        } else {
+          console.error('Failed to fetch users:', response.status, response.statusText);
         }
       } catch (error) {
         console.error('Error fetching users:', error);
@@ -145,7 +141,7 @@ function App() {
     };
 
     fetchUsers();
-  }, [isLoggedIn, currentUser]);
+  }, [user]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -155,28 +151,11 @@ function App() {
     const username = e.target.username.value;
     const password = e.target.password.value;
 
-    try {
-      const response = await fetch('http://localhost:3000/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('username', username);
-        setCurrentUser(username);
-        setIsLoggedIn(true);
-      } else {
-        const errorData = await response.json();
-        setError(errorData.message || 'Invalid credentials');
-      }
-    } catch (err) {
-      setError('Error logging in');
-    } finally {
-      setIsLoading(false);
+    const result = await login(username, password);
+    if (!result.success) {
+      setError(result.message);
     }
+    setIsLoading(false);
   };
 
   const handleRegister = async (e) => {
@@ -187,49 +166,29 @@ function App() {
     const username = e.target.username.value;
     const password = e.target.password.value;
 
-    try {
-      const response = await fetch('http://localhost:3000/api/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('username', username);
-        setCurrentUser(username);
-        setIsLoggedIn(true);
-      } else {
-        const errorData = await response.json();
-        setError(errorData.message || 'Error registering');
-      }
-    } catch (err) {
-      setError('Error registering');
-    } finally {
-      setIsLoading(false);
+    const result = await register(username, password);
+    if (!result.success) {
+      setError(result.message);
     }
+    setIsLoading(false);
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('username');
+    logout();
     socket.disconnect();
-    setCurrentUser('');
-    setIsLoggedIn(false);
     setSelectedUser(null);
     setMessages([]);
     setUsers([]);
     setError('');
   };
 
-  const handleUserSelect = (user) => {
-    console.log('Selected user:', user);
-    setSelectedUser(user);
+  const handleUserSelect = (selectedUsername) => {
+    console.log('Selected user:', selectedUsername);
+    setSelectedUser(selectedUsername);
     setMessages([]); // Clear current messages
     
     // Request chat history
-    socket.emit('get messages', { from: currentUser, to: user });
+    socket.emit('get messages', { from: user.username, to: selectedUsername });
   };
 
   const handleSendMessage = (e) => {
@@ -250,10 +209,16 @@ function App() {
 
   const handleNotificationSelect = (username) => {
     setSelectedUser(username);
+    setMessages([]); // Clear current messages
+    
+    // Request chat history
+    socket.emit('get messages', { from: user.username, to: username });
+    
+    // Remove notifications from this user
     setNotifications(prev => prev.filter(n => n.from !== username));
   };
 
-  if (!isLoggedIn) {
+  if (!user) {
     return (
       <div className="app">
         <Navbar />
@@ -319,19 +284,19 @@ function App() {
 
   return (
     <div className="app">
-      <Navbar currentUser={currentUser} onLogout={handleLogout} />
+      <Navbar currentUser={user.username} onLogout={handleLogout} />
       <div className="chat-container">
         <ChatSidebar
           users={users}
           selectedUser={selectedUser}
           onUserSelect={handleUserSelect}
-          currentUser={currentUser}
+          currentUser={user.username}
         />
         <div className="chat-main">
           <ChatArea
             selectedUser={selectedUser}
             messages={messages}
-            currentUser={currentUser}
+            currentUser={user.username}
           />
           {selectedUser && (
             <MessageInput

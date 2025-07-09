@@ -14,7 +14,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: "http://localhost:5174", // Updated Vite port
+    origin: "http://localhost:5173", // Updated Vite port
     methods: ["GET", "POST"]
   }
 });
@@ -29,7 +29,7 @@ app.use(express.json());
 
 // In-memory storage (replace with a database in production)
 const onlineUsers = new Map();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET || '7e2f806a79f5b9dff8d094d695dba1509f00aa40';
 
 // Authentication middleware
 const authenticateToken = (req, res, next) => {
@@ -62,7 +62,9 @@ app.post('/api/register', async (req, res) => {
     });
     await user.save();
     
-    res.status(201).json({ message: 'User registered successfully' });
+    // Generate token for the newly registered user (same as login)
+    const token = jwt.sign({ username }, JWT_SECRET);
+    res.status(201).json({ token, username, message: 'User registered successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Error registering user' });
   }
@@ -134,26 +136,21 @@ app.get('/api/messages/:username', authenticateToken, async (req, res) => {
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-  console.log('New client connected');
 
   socket.on('login', (username) => {
-    console.log('User logged in:', username);
     onlineUsers.set(username, socket.id);
     socket.username = username;
     
     // Emit users list to all clients
     io.emit('users', Array.from(onlineUsers.keys()));
-    console.log('Current online users:', Array.from(onlineUsers.keys()));
   });
 
   socket.on('get users', () => {
-    console.log('Sending users list to client');
     socket.emit('users', Array.from(onlineUsers.keys()));
   });
 
   socket.on('private message', async ({ to, text }) => {
     try {
-      console.log('Received private message:', { from: socket.username, to, text });
       
       // Create and save message to database
       const newMessage = new Message({
@@ -164,7 +161,6 @@ io.on('connection', (socket) => {
       });
       
       const savedMessage = await newMessage.save();
-      console.log('Saved message to database:', savedMessage);
 
       const messageData = {
         _id: savedMessage._id,
@@ -178,22 +174,18 @@ io.on('connection', (socket) => {
       // Send to receiver if online
       const toSocketId = onlineUsers.get(to);
       if (toSocketId) {
-        console.log('Sending message to receiver:', to);
         io.to(toSocketId).emit('private message', messageData);
       }
 
       // Send confirmation to sender
-      console.log('Sending confirmation to sender');
       socket.emit('private message', messageData);
     } catch (error) {
-      console.error('Error saving/sending message:', error);
       socket.emit('error', { message: 'Error sending message' });
     }
   });
 
   socket.on('get messages', async ({ from, to }) => {
     try {
-      console.log('Fetching messages between:', from, 'and', to);
       const messages = await Message.find({
         $or: [
           { sender: from, receiver: to },
@@ -201,7 +193,6 @@ io.on('connection', (socket) => {
         ]
       }).sort({ createdAt: 1 });
 
-      console.log('Found messages:', messages.length);
       
       // Format messages to ensure consistent structure
       const formattedMessages = messages.map(msg => ({
@@ -215,19 +206,16 @@ io.on('connection', (socket) => {
 
       socket.emit('chat history', formattedMessages);
     } catch (error) {
-      console.error('Error fetching messages:', error);
       socket.emit('error', { message: 'Error fetching messages' });
     }
   });
 
   socket.on('disconnect', () => {
     if (socket.username) {
-      console.log('User disconnected:', socket.username);
       onlineUsers.delete(socket.username);
       // Emit updated users list to all clients
       io.emit('users', Array.from(onlineUsers.keys()));
     }
-    console.log('Client disconnected');
   });
 });
 
